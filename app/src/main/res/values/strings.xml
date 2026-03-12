@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">BTCPay Server</string>
+    <string name="tender_name">BTCPayServer</string>
+</resources>
