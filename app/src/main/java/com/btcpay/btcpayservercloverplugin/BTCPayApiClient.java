@@ -41,7 +41,8 @@ public class BTCPayApiClient {
         return !baseUrl.isEmpty() && !storeId.isEmpty() && !apiKey.isEmpty();
     }
 
-    public InvoiceResult createInvoice(long amountCents, String currency, String orderId, String merchantId) throws Exception {
+    public InvoiceResult createInvoice(long amountCents, String currency, String orderId, String merchantId,
+                                       String employeeId, long baseAmountCents, long tipAmountCents) throws Exception {
         String endpoint = baseUrl + "/api/v1/stores/" + storeId + "/invoices";
 
         JSONObject body = new JSONObject();
@@ -51,6 +52,11 @@ public class BTCPayApiClient {
         JSONObject metadata = new JSONObject();
         if (orderId != null) metadata.put("orderId", orderId);
         if (merchantId != null) metadata.put("itemDesc", "Clover Merchant: " + merchantId);
+        if (merchantId != null) metadata.put("merchantId", merchantId);
+        if (employeeId != null) metadata.put("employeeId", employeeId);
+        metadata.put("baseAmountCents", baseAmountCents);
+        metadata.put("tipAmountCents", tipAmountCents);
+        metadata.put("source", "clover-custom-tender");
         body.put("metadata", metadata);
 
         HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
