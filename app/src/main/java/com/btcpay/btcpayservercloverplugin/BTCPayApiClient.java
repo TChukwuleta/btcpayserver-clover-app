@@ -1,4 +1,4 @@
-package com.btcpay.btcpayservercloverplugin;
+package com.buffalodyl.btcpayservercloverplugin;
 
 
 import android.content.Context;
@@ -24,9 +24,14 @@ public class BTCPayApiClient {
     public static class InvoiceResult {
         public String invoiceId;
         public String checkoutUrl;
-        public InvoiceResult(String invoiceId, String checkoutUrl) {
+        public String paymentPayload;
+        public String paymentMethodId;
+
+        public InvoiceResult(String invoiceId, String checkoutUrl, String paymentPayload, String paymentMethodId) {
             this.invoiceId = invoiceId;
             this.checkoutUrl = checkoutUrl;
+            this.paymentPayload = paymentPayload;
+            this.paymentMethodId = paymentMethodId;
         }
     }
 
@@ -79,8 +84,13 @@ public class BTCPayApiClient {
         JSONObject json = new JSONObject(readResponse(conn));
         String invoiceId = json.getString("id");
         String checkoutUrl = json.getString("checkoutLink");
+        PaymentMethodResult paymentMethodResult = getPreferredPaymentMethod(invoiceId);
 
-        return new InvoiceResult(invoiceId, checkoutUrl);
+        return new InvoiceResult(
+                invoiceId,
+                checkoutUrl,
+                paymentMethodResult.paymentPayload,
+                paymentMethodResult.paymentMethodId);
     }
 
     public String getInvoiceStatus(String invoiceId) throws Exception {
@@ -107,5 +117,68 @@ public class BTCPayApiClient {
         String line;
         while ((line = br.readLine()) != null) sb.append(line);
         return sb.toString();
+    }
+
+    private PaymentMethodResult getPreferredPaymentMethod(String invoiceId) throws Exception {
+        String endpoint = baseUrl + "/api/v1/stores/" + storeId + "/invoices/" + invoiceId + "/payment-methods";
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "token " + apiKey);
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(10000);
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            throw new Exception("Failed to get payment methods: HTTP " + responseCode);
+        }
+
+        org.json.JSONArray methods = new org.json.JSONArray(readResponse(conn));
+        String[] preferredMethodIds = new String[] {"BTC-LN", "BTC-CHAIN", "BTC-LNURL"};
+
+        for (String methodId : preferredMethodIds) {
+            for (int i = 0; i < methods.length(); i++) {
+                JSONObject method = methods.getJSONObject(i);
+                if (!method.optBoolean("activated", false)) {
+                    continue;
+                }
+                if (!methodId.equals(method.optString("paymentMethodId"))) {
+                    continue;
+                }
+                String payload = extractPayload(method);
+                if (payload != null && !payload.isEmpty()) {
+                    return new PaymentMethodResult(payload, methodId);
+                }
+            }
+        }
+
+        throw new Exception("No active Bitcoin payment method found");
+    }
+
+    private String extractPayload(JSONObject method) {
+        String methodId = method.optString("paymentMethodId", "");
+        String destination = method.optString("destination", "");
+        String paymentLink = method.optString("paymentLink", "");
+
+        if ("BTC-LN".equals(methodId) && !destination.isEmpty()) {
+            return destination;
+        }
+        if (!paymentLink.isEmpty()) {
+            return paymentLink;
+        }
+        if (!destination.isEmpty()) {
+            return destination;
+        }
+        return null;
+    }
+
+    private static class PaymentMethodResult {
+        private final String paymentPayload;
+        private final String paymentMethodId;
+
+        private PaymentMethodResult(String paymentPayload, String paymentMethodId) {
+            this.paymentPayload = paymentPayload;
+            this.paymentMethodId = paymentMethodId;
+        }
     }
 }

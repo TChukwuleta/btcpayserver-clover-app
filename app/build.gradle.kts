@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.btcpay.btcpayservercloverplugin"
+    namespace = "com.buffalodyl.btcpayservercloverplugin"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -16,12 +16,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.btcpay.btcpayservercloverplugin"
+        applicationId = "com.buffalodyl.btcpayservercloverplugin"
         minSdk = 24
         //noinspection ExpiredTargetSdkVersion
         targetSdk = 29
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -41,7 +41,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = null
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

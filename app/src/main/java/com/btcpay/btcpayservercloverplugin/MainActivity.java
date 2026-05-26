@@ -1,4 +1,4 @@
-package com.btcpay.btcpayservercloverplugin;
+package com.buffalodyl.btcpayservercloverplugin;
 
 import android.accounts.Account;
 import android.content.SharedPreferences;
