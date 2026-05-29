@@ -1,4 +1,4 @@
-package com.btcpay.btcpayservercloverplugin;
+package com.buffalodyl.btcpayservercloverplugin;
 
 import android.content.Context;
 
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
     public void useAppContext() {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.btcpay.btcpayservercloverplugin", appContext.getPackageName());
+        assertEquals("com.buffalodyl.btcpayservercloverplugin", appContext.getPackageName());
     }
 }

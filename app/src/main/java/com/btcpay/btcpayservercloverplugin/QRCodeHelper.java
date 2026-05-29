@@ -1,4 +1,4 @@
-package com.btcpay.btcpayservercloverplugin;
+package com.buffalodyl.btcpayservercloverplugin;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
