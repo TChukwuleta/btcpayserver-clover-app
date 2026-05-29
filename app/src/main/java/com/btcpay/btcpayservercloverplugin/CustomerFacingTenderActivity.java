@@ -14,13 +14,18 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 import com.clover.sdk.v1.Intents;
+import com.clover.sdk.v3.payments.api.RequestTipIntentBuilder;
+import com.clover.sdk.v3.payments.api.TipSuggestion;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Currency;
+import java.util.List;
 
 public class CustomerFacingTenderActivity extends Activity {
-    private static final String TAG = "CustomerTender";
-    private TextView textAmount, textStatus, textSubtitle, textTip;
+    private static final int REQUEST_TIP = 1001;
+    private static final String TAG = "BTCPayTenderCustomer";
+    private TextView textAmount, textStatus, textSubtitle, textSubtotal, textTip;
     private ImageView imageQr;
     private Button btnCancel;
 
@@ -56,6 +61,7 @@ public class CustomerFacingTenderActivity extends Activity {
         textAmount = findViewById(R.id.text_amount);
         textSubtitle = findViewById(R.id.text_subtitle);
         textStatus = findViewById(R.id.text_status);
+        textSubtotal = findViewById(R.id.text_subtotal);
         textTip = findViewById(R.id.text_tip);
         imageQr = findViewById(R.id.image_qr);
         btnCancel = findViewById(R.id.btn_cancel);
@@ -65,8 +71,15 @@ public class CustomerFacingTenderActivity extends Activity {
         merchantId = getIntent().getStringExtra(Intents.EXTRA_MERCHANT_ID);
         employeeId = getIntent().getStringExtra(Intents.EXTRA_EMPLOYEE_ID);
         currency = (Currency) getIntent().getSerializableExtra(Intents.EXTRA_CURRENCY);
+        Log.i(TAG, "onCreate amount=" + baseAmountCents
+                + " orderId=" + orderId
+                + " merchantId=" + merchantId
+                + " employeeId=" + employeeId
+                + " currency=" + (currency == null ? "null" : currency.getCurrencyCode())
+                + " tipFlowMode=" + TipFlowConfig.getActiveTipFlow());
         if (currency == null) {
             textStatus.setText("Could not determine currency. Please try again.");
+            Log.w(TAG, "onCreate missing currency; leaving tender in canceled state");
             return;
         }
         tipAmountCents = 0L;
@@ -80,10 +93,12 @@ public class CustomerFacingTenderActivity extends Activity {
 
         if (!btcPayClient.isConfigured()) {
             textStatus.setText("BTCPay not configured.");
+            Log.w(TAG, "BTCPay client not configured; leaving tender in canceled state");
             return;
         }
 
         btnCancel.setOnClickListener(v -> {
+            Log.i(TAG, "Cancel clicked currentInvoiceId=" + currentInvoiceId + " polling=" + polling);
             polling = false;
             handler.removeCallbacks(pollRunnable);
             setResult(RESULT_CANCELED);
@@ -105,6 +120,31 @@ public class CustomerFacingTenderActivity extends Activity {
     }
 
     private void startTipFlow() {
+        Log.i(TAG, "startTipFlow mode=" + TipFlowConfig.getActiveTipFlow());
+        if (TipFlowConfig.getActiveTipFlow() == TipFlowMode.CLOVER_NATIVE) {
+            openNativeTipFlow();
+            return;
+        }
+        openLocalTipDialog();
+    }
+
+    private void openNativeTipFlow() {
+        textStatus.setText("Opening Clover tip selection...");
+        Log.i(TAG, "Opening Clover native tip flow baseAmount=" + baseAmountCents);
+        List<TipSuggestion> suggestions = new ArrayList<>();
+        suggestions.add(TipSuggestion.Amount("No tip", 0L));
+        suggestions.add(TipSuggestion.Percentage("15%", 15L));
+        suggestions.add(TipSuggestion.Percentage("20%", 20L));
+        suggestions.add(TipSuggestion.Percentage("25%", 25L));
+        Intent intent = new RequestTipIntentBuilder(baseAmountCents)
+                .tipSuggestions(suggestions)
+                .build(this);
+        startActivityForResult(intent, REQUEST_TIP);
+    }
+
+    private void openLocalTipDialog() {
+        textStatus.setText("Select tip to continue...");
+        Log.i(TAG, "Opening local tip dialog baseAmount=" + baseAmountCents);
         long fifteenPercent = calculatePercentageTip(15);
         long twentyPercent = calculatePercentageTip(20);
         long twentyFivePercent = calculatePercentageTip(25);
@@ -139,6 +179,7 @@ public class CustomerFacingTenderActivity extends Activity {
                     }
                 })
                 .setNegativeButton("Cancel", (dialog, which) -> {
+                    Log.i(TAG, "Local tip dialog canceled");
                     setResult(RESULT_CANCELED);
                     finish();
                 })
@@ -148,6 +189,10 @@ public class CustomerFacingTenderActivity extends Activity {
     private void createInvoice() {
         textSubtitle.setText("Scan with your phone to pay");
         textStatus.setText("Creating invoice...");
+        Log.i(TAG, "createInvoice baseAmount=" + baseAmountCents
+                + " tipAmount=" + tipAmountCents
+                + " totalAmount=" + totalAmountCents
+                + " orderId=" + orderId);
         new Thread(() -> {
             try {
                 BTCPayApiClient.InvoiceResult invoice = btcPayClient.createInvoice(
@@ -159,6 +204,8 @@ public class CustomerFacingTenderActivity extends Activity {
                         baseAmountCents,
                         tipAmountCents);
                 currentInvoiceId = invoice.invoiceId;
+                Log.i(TAG, "Invoice created invoiceId=" + currentInvoiceId
+                        + " paymentMethod=" + invoice.paymentMethodId);
 
                 int sizePx = (int) (getResources().getDisplayMetrics().density * 250);
                 Bitmap qr = QRCodeHelper.generateQRCode(invoice.paymentPayload, sizePx);
@@ -172,6 +219,7 @@ public class CustomerFacingTenderActivity extends Activity {
                     startPolling();
                 });
             } catch (Exception e) {
+                Log.e(TAG, "Invoice creation failed", e);
                 runOnUiThread(() -> textStatus.setText("Error: " + e.getMessage()));
             }
         }).start();
@@ -179,7 +227,12 @@ public class CustomerFacingTenderActivity extends Activity {
 
     private void updateAmountDisplay() {
         textAmount.setText(formatAmount(currency, totalAmountCents));
-        textTip.setText(formatBreakdown());
+        updateBreakdownDisplay();
+    }
+
+    private void updateBreakdownDisplay() {
+        textSubtotal.setText("Subtotal: " + formatAmount(currency, baseAmountCents));
+        textTip.setText("Tip: " + formatAmount(currency, tipAmountCents));
     }
 
     private long calculatePercentageTip(int percent) {
@@ -189,6 +242,7 @@ public class CustomerFacingTenderActivity extends Activity {
     private void applyTipSelection(long selectedTipCents) {
         tipAmountCents = Math.max(selectedTipCents, 0L);
         totalAmountCents = baseAmountCents + tipAmountCents;
+        Log.i(TAG, "applyTipSelection tipAmount=" + tipAmountCents + " totalAmount=" + totalAmountCents);
         updateAmountDisplay();
         createInvoice();
     }
@@ -204,7 +258,7 @@ public class CustomerFacingTenderActivity extends Activity {
                 .setView(input)
                 .setCancelable(false)
                 .setPositiveButton("Apply", null)
-                .setNegativeButton("Back", (d, which) -> startTipFlow())
+                .setNegativeButton("Back", (d, which) -> openLocalTipDialog())
                 .create();
         dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -215,6 +269,7 @@ public class CustomerFacingTenderActivity extends Activity {
                         .setScale(0, RoundingMode.HALF_UP)
                         .longValueExact();
                 dialog.dismiss();
+                Log.i(TAG, "Custom tip entered tipAmount=" + customTipCents);
                 applyTipSelection(customTipCents);
             } catch (Exception e) {
                 input.setError("Enter a valid amount");
@@ -222,8 +277,31 @@ public class CustomerFacingTenderActivity extends Activity {
         });
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        Log.i(TAG, "onActivityResult requestCode=" + requestCode
+                + " resultCode=" + resultCode
+                + " hasData=" + (data != null));
+        if (requestCode != REQUEST_TIP) {
+            return;
+        }
+
+        if (resultCode == RESULT_OK && data != null) {
+            long selectedTip = data.getLongExtra(RequestTipIntentBuilder.Response.TIP_AMOUNT, 0L);
+            Log.i(TAG, "Native tip flow returned tipAmount=" + selectedTip);
+            applyTipSelection(selectedTip);
+            return;
+        }
+
+        Log.w(TAG, "Native tip flow canceled or failed; returning canceled");
+        setResult(RESULT_CANCELED);
+        finish();
+    }
+
     private void startPolling() {
         polling = true;
+        Log.i(TAG, "startPolling invoiceId=" + currentInvoiceId);
         handler.post(pollRunnable);
     }
 
@@ -232,18 +310,24 @@ public class CustomerFacingTenderActivity extends Activity {
         new Thread(() -> {
             try {
                 String status = btcPayClient.getInvoiceStatus(currentInvoiceId);
+                Log.d(TAG, "Invoice status invoiceId=" + currentInvoiceId + " status=" + status);
                 runOnUiThread(() -> handleStatus(status));
             } catch (Exception e) {
-                // silently retry
+                Log.w(TAG, "Invoice status check failed invoiceId=" + currentInvoiceId, e);
             }
         }).start();
     }
 
     private void handleStatus(String status) {
+        Log.i(TAG, "handleStatus status=" + status
+                + " finalizingPayment=" + finalizingPayment
+                + " polling=" + polling
+                + " invoiceId=" + currentInvoiceId);
         switch (status) {
             case "Settled":
             case "Processing":
                 if (finalizingPayment) {
+                    Log.i(TAG, "Already finalizing; ignoring duplicate status=" + status);
                     return;
                 }
                 finalizingPayment = true;
@@ -251,6 +335,9 @@ public class CustomerFacingTenderActivity extends Activity {
                 handler.removeCallbacks(pollRunnable);
                 textStatus.setText("Payment received. Finalizing Clover sale...");
                 imageQr.setVisibility(View.GONE);
+                Log.i(TAG, "Spawning finalizeCloverSale thread amount=" + totalAmountCents
+                        + " tipAmount=" + tipAmountCents
+                        + " clientId=" + currentInvoiceId);
                 new Thread(() -> finalizeCloverSale()).start();
                 break;
             case "Expired":
@@ -258,6 +345,7 @@ public class CustomerFacingTenderActivity extends Activity {
                 polling = false;
                 handler.removeCallbacks(pollRunnable);
                 textStatus.setText("Invoice expired. Tap Cancel.");
+                Log.w(TAG, "Invoice ended without payment status=" + status + " invoiceId=" + currentInvoiceId);
                 break;
         }
     }
@@ -265,11 +353,6 @@ public class CustomerFacingTenderActivity extends Activity {
     private String formatAmount(Currency currency, long amountCents) {
         if (currency == null) return String.format("%.2f", amountCents / 100.0);
         return currency.getSymbol() + String.format("%.2f", amountCents / 100.0);
-    }
-
-    private String formatBreakdown() {
-        return "Subtotal: " + formatAmount(currency, baseAmountCents)
-                + "   Tip: " + formatAmount(currency, tipAmountCents);
     }
 
     private String formatPaymentMethod(String paymentMethodId) {
@@ -280,29 +363,27 @@ public class CustomerFacingTenderActivity extends Activity {
     }
 
     private void finalizeCloverSale() {
-        try {
-            new CloverPaymentRecorder(this).recordPayment(
-                    orderId,
-                    employeeId,
-                    currentInvoiceId,
-                    baseAmountCents,
-                    tipAmountCents);
-            runOnUiThread(() -> {
-                textStatus.setText("Payment recorded in Clover!");
-                setResult(RESULT_CANCELED);
-                finish();
-            });
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to record Clover payment", e);
-            runOnUiThread(() -> {
-                textStatus.setText("Clover record failed: " + e.getClass().getSimpleName()
-                        + ": " + e.getMessage());
-            });
-        }
+        runOnUiThread(() -> {
+            textStatus.setText("Payment recorded in Clover!");
+            Intent data = new Intent();
+            data.putExtra(Intents.EXTRA_AMOUNT, totalAmountCents);
+            data.putExtra(Intents.EXTRA_TIP_AMOUNT, tipAmountCents);
+            data.putExtra(Intents.EXTRA_CLIENT_ID, currentInvoiceId);
+            Log.i(TAG, "finalizeCloverSale setting RESULT_OK amount=" + totalAmountCents
+                    + " tipAmount=" + tipAmountCents
+                    + " clientId=" + currentInvoiceId);
+            setResult(RESULT_OK, data);
+            Log.i(TAG, "finalizeCloverSale finishing activity");
+            finish();
+        });
     }
 
     @Override
     protected void onDestroy() {
+        Log.i(TAG, "onDestroy invoiceId=" + currentInvoiceId
+                + " polling=" + polling
+                + " finalizingPayment=" + finalizingPayment
+                + " isFinishing=" + isFinishing());
         polling = false;
         handler.removeCallbacks(pollRunnable);
         super.onDestroy();

@@ -37,7 +37,7 @@ public class BTCPayApiClient {
 
     public BTCPayApiClient(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        this.baseUrl = prefs.getString(KEY_URL, "");
+        this.baseUrl = sanitizeBaseUrl(prefs.getString(KEY_URL, ""));
         this.storeId = prefs.getString(KEY_STORE_ID, "");
         this.apiKey = prefs.getString(KEY_API_KEY, "");
     }
@@ -78,7 +78,7 @@ public class BTCPayApiClient {
 
         int responseCode = conn.getResponseCode();
         if (responseCode != 200 && responseCode != 201) {
-            throw new Exception("Failed to create invoice: HTTP " + responseCode);
+            throw new Exception("Failed to create invoice: HTTP " + responseCode + " " + readErrorResponse(conn));
         }
 
         JSONObject json = new JSONObject(readResponse(conn));
@@ -104,7 +104,7 @@ public class BTCPayApiClient {
 
         int responseCode = conn.getResponseCode();
         if (responseCode != 200) {
-            throw new Exception("Failed to get invoice status: HTTP " + responseCode);
+            throw new Exception("Failed to get invoice status: HTTP " + responseCode + " " + readErrorResponse(conn));
         }
 
         JSONObject json = new JSONObject(readResponse(conn));
@@ -117,6 +117,21 @@ public class BTCPayApiClient {
         String line;
         while ((line = br.readLine()) != null) sb.append(line);
         return sb.toString();
+    }
+
+    private String readErrorResponse(HttpURLConnection conn) {
+        try {
+            if (conn.getErrorStream() == null) {
+                return "";
+            }
+            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private PaymentMethodResult getPreferredPaymentMethod(String invoiceId) throws Exception {
@@ -180,5 +195,16 @@ public class BTCPayApiClient {
             this.paymentPayload = paymentPayload;
             this.paymentMethodId = paymentMethodId;
         }
+    }
+
+    private String sanitizeBaseUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String trimmed = url.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }

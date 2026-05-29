@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnTestSave;
     private TenderConnector tenderConnector;
     private Account account;
+    private boolean tenderRegistrationRequested = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +60,10 @@ public class MainActivity extends AppCompatActivity {
         if (account != null) {
             tenderConnector = new TenderConnector(this, account, null);
             tenderConnector.connect();
+            if (!tenderRegistrationRequested) {
+                tenderRegistrationRequested = true;
+                registerTender();
+            }
         }
     }
 
@@ -68,6 +73,7 @@ public class MainActivity extends AppCompatActivity {
             tenderConnector.disconnect();
             tenderConnector = null;
         }
+        tenderRegistrationRequested = false;
         super.onPause();
     }
 
@@ -158,10 +164,21 @@ public class MainActivity extends AppCompatActivity {
                 new TenderConnector.TenderCallback<Tender>() {
                     @Override
                     public void onServiceSuccess(Tender result, ResultStatus status) {
-                        runOnUiThread(() -> {
-                            textTenderStatus.setText("BTCPay Server tender registered!");
-                            textTenderStatus.setTextColor(0xFF00AA00);
-                        });
+                        textTenderStatus.setText("Tender registered. Enabling Clover tip support...");
+                        new Thread(() -> {
+                            try {
+                                new CloverTenderConfigurator(MainActivity.this).ensureSupportsTipping(result);
+                                runOnUiThread(() -> {
+                                    textTenderStatus.setText("BTCPay Server tender registered with tip support!");
+                                    textTenderStatus.setTextColor(0xFF00AA00);
+                                });
+                            } catch (Exception e) {
+                                runOnUiThread(() -> {
+                                    textTenderStatus.setText("Tender registered, but tip support update failed: " + e.getMessage());
+                                    textTenderStatus.setTextColor(0xFFCC0000);
+                                });
+                            }
+                        }).start();
                     }
 
                     @Override

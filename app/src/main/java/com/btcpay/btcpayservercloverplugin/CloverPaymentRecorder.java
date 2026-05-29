@@ -5,14 +5,20 @@ import android.content.Context;
 import android.util.Log;
 
 import com.clover.sdk.util.CloverAccount;
+import com.clover.sdk.util.CloverAuth;
 import com.clover.sdk.v1.tender.Tender;
 import com.clover.sdk.v1.tender.TenderConnector;
-import com.clover.sdk.v3.base.Reference;
-import com.clover.sdk.v3.order.OrderConnector;
-import com.clover.sdk.v3.payments.Payment;
-import com.clover.sdk.v3.payments.Result;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class CloverPaymentRecorder {
     private static final String TAG = "CloverPaymentRecorder";
@@ -42,40 +48,69 @@ public class CloverPaymentRecorder {
         }
 
         TenderConnector tenderConnector = new TenderConnector(context, account, null);
-        OrderConnector orderConnector = new OrderConnector(context, account, null);
-
         tenderConnector.connect();
-        orderConnector.connect();
         try {
             Tender tender = findTender(tenderConnector.getTenders());
             if (tender == null || tender.getId() == null) {
                 throw new IllegalStateException("Could not locate BTCPay tender");
             }
 
-            Payment payment = new Payment();
-            payment.setOrder(new Reference().setId(orderId));
-            payment.setTender(new com.clover.sdk.v3.base.Tender()
-                    .setId(tender.getId())
-                    .setLabel(tender.getLabel())
-                    .setLabelKey(tender.getLabelKey()));
-            payment.setAmount(baseAmountCents);
-            if (tipAmountCents > 0) {
-                payment.setTipAmount(tipAmountCents);
-            }
-            payment.setTaxAmount(0L);
-            payment.setExternalPaymentId(externalPaymentId);
-            payment.setCreatedTime(System.currentTimeMillis());
-            payment.setResult(Result.SUCCESS);
-            payment.setNote("BTCPay invoice " + externalPaymentId);
-            if (employeeId != null && !employeeId.isEmpty()) {
-                payment.setEmployee(new Reference().setId(employeeId));
+            CloverAuth.AuthResult authResult = CloverAuth.authenticate(context, false, 20L, TimeUnit.SECONDS);
+            if (authResult.authToken == null || authResult.baseUrl == null || authResult.merchantId == null) {
+                throw new IllegalStateException("Could not obtain Clover auth token: " + authResult.errorMessage);
             }
 
-            orderConnector.addPayment3(orderId, payment, null, true);
+            JSONObject payload = new JSONObject();
+            payload.put("amount", baseAmountCents);
+            payload.put("externalPaymentId", externalPaymentId);
+            payload.put("tender", new JSONObject().put("id", tender.getId()));
+            if (tipAmountCents > 0) {
+                payload.put("tipAmount", tipAmountCents);
+            }
+            if (employeeId != null && !employeeId.isEmpty()) {
+                payload.put("employee", new JSONObject().put("id", employeeId));
+            }
+
+            String url = authResult.baseUrl + "/v3/merchants/" + authResult.merchantId
+                    + "/orders/" + orderId + "/payments";
+            Log.i(TAG, "Submitting Clover REST payment to " + url + " payload=" + payload);
+
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Authorization", "Bearer " + authResult.authToken);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(bytes);
+            }
+
+            int status = conn.getResponseCode();
+            String responseBody = readFully(status >= 400 ? conn.getErrorStream() : conn.getInputStream());
+            Log.i(TAG, "Clover REST payment response status=" + status + " body=" + responseBody);
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("Clover REST payment failed: HTTP " + status + " " + responseBody);
+            }
+
             Log.i(TAG, "Clover payment recorded successfully for orderId=" + orderId);
         } finally {
-            orderConnector.disconnect();
             tenderConnector.disconnect();
+        }
+    }
+
+    private String readFully(InputStream inputStream) throws Exception {
+        if (inputStream == null) {
+            return "";
+        }
+        try (InputStream is = inputStream) {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            int read;
+            while ((read = is.read(chunk)) != -1) {
+                buffer.write(chunk, 0, read);
+            }
+            return buffer.toString(StandardCharsets.UTF_8.name());
         }
     }
 
