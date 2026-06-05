@@ -225,6 +225,7 @@ public class CustomerFacingTenderActivity extends Activity {
                         orderId,
                         merchantId,
                         employeeId,
+                        employeeName,
                         baseAmountCents,
                         tipAmountCents);
                 currentInvoiceId = invoice.invoiceId;
