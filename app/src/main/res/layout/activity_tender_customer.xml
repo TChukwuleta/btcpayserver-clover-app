@@ -37,6 +37,24 @@
         android:gravity="center"
         android:layout_marginBottom="16dp" />
 
+    <TextView
+        android:id="@+id/text_subtotal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="#AAAACC"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="2dp" />
+
+    <TextView
+        android:id="@+id/text_tip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="#AAAACC"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="8dp" />
+
     <ImageView
         android:id="@+id/image_qr"
         android:layout_width="320dp"

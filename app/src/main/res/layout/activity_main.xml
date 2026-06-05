@@ -28,101 +28,143 @@
             android:layout_marginBottom="24dp"/>
 
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="BTCPay Server URL"
-            android:textSize="13sp"
-            android:textColor="#555555"
-            android:layout_marginBottom="4dp"/>
-
-        <EditText
-            android:id="@+id/edit_btcpay_url"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="https://your-btcpay-server.com"
-            android:inputType="textUri"
-            android:padding="12dp"
-            android:background="@drawable/input_border"
-            android:layout_marginBottom="16dp"/>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Store ID"
-            android:textSize="13sp"
-            android:textColor="#555555"
-            android:layout_marginBottom="4dp"/>
-
-        <EditText
-            android:id="@+id/edit_store_id"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Your BTCPay Store ID"
-            android:inputType="text"
-            android:padding="12dp"
-            android:background="@drawable/input_border"
-            android:layout_marginBottom="16dp"/>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="API Key"
-            android:textSize="13sp"
-            android:textColor="#555555"
-            android:layout_marginBottom="4dp"/>
-
-        <EditText
-            android:id="@+id/edit_api_key"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Your BTCPay API Key"
-            android:inputType="textPassword"
-            android:padding="12dp"
-            android:background="@drawable/input_border"
-            android:layout_marginBottom="24dp"/>
-
-        <Button
-            android:id="@+id/btn_test_save"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="Test Connection &amp; Save"
-            android:backgroundTint="#51B13E"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:layout_marginBottom="16dp"/>
-
-        <TextView
-            android:id="@+id/text_connection_status"
+            android:id="@+id/text_access_denied"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text=""
             android:textSize="14sp"
+            android:textColor="#CC0000"
             android:gravity="center"
+            android:visibility="gone"
             android:layout_marginBottom="16dp"/>
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#E0E0E0"
-            android:layout_marginBottom="24dp"/>
-
-        <TextView
-            android:id="@+id/text_tender_status"
+        <LinearLayout
+            android:id="@+id/layout_settings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="14sp"
-            android:gravity="center"
-            android:layout_marginBottom="8dp"/>
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <TextView
-            android:id="@+id/text_tender_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="12sp"
-            android:textColor="#888888"
-            android:gravity="center"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="BTCPay Server URL"
+                android:textSize="13sp"
+                android:textColor="#555555"
+                android:layout_marginBottom="4dp"/>
 
+            <EditText
+                android:id="@+id/edit_btcpay_url"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="https://your-btcpay-server.com"
+                android:inputType="textUri"
+                android:padding="12dp"
+                android:background="@drawable/input_border"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Store ID"
+                android:textSize="13sp"
+                android:textColor="#555555"
+                android:layout_marginBottom="4dp"/>
+
+            <EditText
+                android:id="@+id/edit_store_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Your BTCPay Store ID"
+                android:inputType="text"
+                android:padding="12dp"
+                android:background="@drawable/input_border"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="API Key"
+                android:textSize="13sp"
+                android:textColor="#555555"
+                android:layout_marginBottom="4dp"/>
+
+            <EditText
+                android:id="@+id/edit_api_key"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Your BTCPay API Key"
+                android:inputType="textVisiblePassword"
+                android:padding="12dp"
+                android:background="@drawable/input_border"
+                android:layout_marginBottom="16dp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="24dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Enable tipping"
+                    android:textSize="14sp"
+                    android:textColor="#333333"/>
+
+                <Switch
+                    android:id="@+id/switch_tipping"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"/>
+
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btn_test_save"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Test Connection &amp; Save"
+                android:backgroundTint="#51B13E"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:id="@+id/text_connection_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="14sp"
+                android:gravity="center"
+                android:layout_marginBottom="16dp"/>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#E0E0E0"
+                android:layout_marginBottom="24dp"/>
+
+            <TextView
+                android:id="@+id/text_tender_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="14sp"
+                android:gravity="center"
+                android:layout_marginBottom="8dp"/>
+
+            <TextView
+                android:id="@+id/text_tender_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textColor="#888888"
+                android:gravity="center"/>
+
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

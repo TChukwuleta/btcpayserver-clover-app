@@ -4,14 +4,22 @@ import android.accounts.Account;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.StrictMode;
+import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.clover.sdk.util.CloverAccount;
 import com.clover.sdk.v1.ResultStatus;
 import com.clover.sdk.v1.tender.Tender;
 import com.clover.sdk.v1.tender.TenderConnector;
+import com.clover.sdk.v3.employees.AccountRole;
+import com.clover.sdk.v3.employees.Employee;
+import com.clover.sdk.v3.employees.EmployeeConnector;
+
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -19,38 +27,101 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String PREFS_NAME = "BTCPayPrefs";
-    private static final String KEY_URL = "btcpay_url";
-    private static final String KEY_STORE_ID = "store_id";
-    private static final String KEY_API_KEY = "api_key";
+    private static final String TAG = "BTCPayMain";
 
     private EditText editUrl, editStoreId, editApiKey;
-    private TextView textConnectionStatus, textTenderStatus;
+    private TextView textConnectionStatus, textTenderStatus, textAccessDenied;
+    private Switch switchTipping;
     private Button btnTestSave;
+    private LinearLayout layoutSettings;
+
     private TenderConnector tenderConnector;
+    private EmployeeConnector employeeConnector;
     private Account account;
+    private boolean tenderRegistrationRequested = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
-        StrictMode.setThreadPolicy(policy);
-
         editUrl = findViewById(R.id.edit_btcpay_url);
         editStoreId = findViewById(R.id.edit_store_id);
         editApiKey = findViewById(R.id.edit_api_key);
         textConnectionStatus = findViewById(R.id.text_connection_status);
         textTenderStatus = findViewById(R.id.text_tender_status);
+        textAccessDenied = findViewById(R.id.text_access_denied);
+        switchTipping = findViewById(R.id.switch_tipping);
         btnTestSave = findViewById(R.id.btn_test_save);
+        layoutSettings = findViewById(R.id.layout_settings);
 
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        editUrl.setText(prefs.getString(KEY_URL, ""));
-        editStoreId.setText(prefs.getString(KEY_STORE_ID, ""));
-        editApiKey.setText(prefs.getString(KEY_API_KEY, ""));
-        btnTestSave.setOnClickListener(v -> testAndSave());
         account = CloverAccount.getAccount(this);
+
+        BTCPayApiClient.Config config = BTCPayApiClient.loadConfiguration(this);
+        editUrl.setText(config.baseUrl);
+        editStoreId.setText(config.storeId);
+        editApiKey.setText(config.apiKey);
+        switchTipping.setChecked(config.tippingEnabled);
+
+        btnTestSave.setOnClickListener(v -> testAndSave());
+        checkEmployeeRole();
+    }
+
+    private void checkEmployeeRole() {
+        layoutSettings.setVisibility(View.GONE);
+        textAccessDenied.setVisibility(View.GONE);
+
+        EmployeeConnector connector = new EmployeeConnector(this, account, null);
+        connector.connect();
+
+        connector.getEmployee(new EmployeeConnector.EmployeeCallback<Employee>() {
+            @Override
+            public void onServiceSuccess(Employee employee, ResultStatus status) {
+                boolean privileged = isPrivilegedEmployee(employee);
+                runOnUiThread(() -> {
+                    if (privileged) {
+                        showSettings();
+                    } else {
+                        showAccessDenied();
+                    }
+                    connector.disconnect();
+                });
+            }
+
+            @Override
+            public void onServiceFailure(ResultStatus status) {
+                runOnUiThread(() -> {
+                    showAccessDenied();
+                    connector.disconnect();
+                });
+            }
+
+            @Override
+            public void onServiceConnectionFailure() {
+                runOnUiThread(() -> {
+                    showAccessDenied();
+                    connector.disconnect();
+                });
+            }
+        });
+    }
+
+    private boolean isPrivilegedEmployee(Employee employee) {
+        if (employee == null) return false;
+        if (Boolean.TRUE.equals(employee.getIsOwner())) return true;
+        AccountRole role = employee.getRole();
+        return role == AccountRole.ADMIN || role == AccountRole.MANAGER;
+    }
+
+    private void showSettings() {
+        layoutSettings.setVisibility(View.VISIBLE);
+        textAccessDenied.setVisibility(View.GONE);
+    }
+
+    private void showAccessDenied() {
+        layoutSettings.setVisibility(View.GONE);
+        textAccessDenied.setVisibility(View.VISIBLE);
+        textAccessDenied.setText("Only managers and admins can configure BTCPay settings.");
     }
 
     @Override
@@ -67,61 +138,46 @@ public class MainActivity extends AppCompatActivity {
         if (tenderConnector != null) {
             tenderConnector.disconnect();
             tenderConnector = null;
+            tenderRegistrationRequested = false;
         }
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (employeeConnector != null) {
+            employeeConnector.disconnect();
+            employeeConnector = null;
+        }
+        super.onDestroy();
     }
 
     private void testAndSave() {
         String url = editUrl.getText().toString().trim();
         String storeId = editStoreId.getText().toString().trim();
         String apiKey = editApiKey.getText().toString().trim();
+        boolean tippingEnabled = switchTipping.isChecked();
 
         if (url.isEmpty() || storeId.isEmpty() || apiKey.isEmpty()) {
             textConnectionStatus.setText("Please fill in all fields");
             textConnectionStatus.setTextColor(0xFFCC0000);
             return;
         }
-        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
 
         btnTestSave.setEnabled(false);
         textConnectionStatus.setTextColor(0xFF888888);
         textConnectionStatus.setText("Testing connection...");
 
-        final String finalUrl = url;
-        final String finalStoreId = storeId;
-        final String finalApiKey = apiKey;
-
         new Thread(() -> {
             boolean success = false;
             String message = "";
             try {
-                String endpoint = finalUrl + "/api/v1/stores/" + finalStoreId;
-                HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
-                conn.setRequestMethod("GET");
-                conn.setRequestProperty("Authorization", "token " + finalApiKey);
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                int responseCode = conn.getResponseCode();
-                if (responseCode == 200) {
-                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    StringBuilder sb = new StringBuilder();
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                    JSONObject json = new JSONObject(sb.toString());
-                    String storeName = json.optString("name", "Unknown Store");
-                    success = true;
-                    message = "Connected to: " + storeName;
-                } else if (responseCode == 401) {
-                    message = "Invalid API key";
-                } else if (responseCode == 404) {
-                    message = "Store ID not found";
-                } else {
-                    message = "Server returned: " + responseCode;
-                }
+                String storeName = BTCPayApiClient.testConnection(url, storeId, apiKey);
+                success = true;
+                message = "Connected to: " + storeName;
             } catch (Exception e) {
                 message = "Could not reach server: " + e.getMessage();
             }
-
             final boolean finalSuccess = success;
             final String finalMessage = message;
 
@@ -129,15 +185,9 @@ public class MainActivity extends AppCompatActivity {
                 btnTestSave.setEnabled(true);
                 textConnectionStatus.setText(finalMessage);
                 textConnectionStatus.setTextColor(finalSuccess ? 0xFF00AA00 : 0xFFCC0000);
-
                 if (finalSuccess) {
-                    SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit();
-                    editor.putString(KEY_URL, finalUrl);
-                    editor.putString(KEY_STORE_ID, finalStoreId);
-                    editor.putString(KEY_API_KEY, finalApiKey);
-                    editor.apply();
-
-                    // Register tender
+                    BTCPayApiClient.saveConfiguration(this, url, storeId, apiKey, tippingEnabled);
+                    tenderRegistrationRequested = false;
                     registerTender();
                 }
             });
@@ -151,6 +201,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (tenderRegistrationRequested) return;
+        tenderRegistrationRequested = true;
+
         textTenderStatus.setText("Registering BTCPay Server tender...");
         textTenderStatus.setTextColor(0xFF888888);
 
@@ -162,10 +215,20 @@ public class MainActivity extends AppCompatActivity {
                             textTenderStatus.setText("BTCPay Server tender registered!");
                             textTenderStatus.setTextColor(0xFF00AA00);
                         });
+
+                        new Thread(() -> {
+                            try {
+                                new CloverTenderConfigurator(MainActivity.this).ensureSupportsTipping(result);
+                                Log.i(TAG, "Tipping enabled on tender");
+                            } catch (Exception e) {
+                                Log.w(TAG, "Could not enable tipping on tender: " + e.getMessage());
+                            }
+                        }).start();
                     }
 
                     @Override
                     public void onServiceFailure(ResultStatus status) {
+                        tenderRegistrationRequested = false;
                         runOnUiThread(() -> {
                             textTenderStatus.setText("Registration failed: " + status.getStatusMessage());
                             textTenderStatus.setTextColor(0xFFCC0000);
@@ -174,11 +237,14 @@ public class MainActivity extends AppCompatActivity {
 
                     @Override
                     public void onServiceConnectionFailure() {
+                        tenderRegistrationRequested = false;
                         runOnUiThread(() -> {
                             textTenderStatus.setText("Could not bind to Android service");
                             textTenderStatus.setTextColor(0xFFCC0000);
                         });
                     }
                 });
+
+
     }
 }
